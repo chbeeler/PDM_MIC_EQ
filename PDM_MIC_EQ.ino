@@ -1,5 +1,18 @@
 #include <PDM.h>
 
+#define USE_BLE
+
+#ifdef USE_BLE
+#include <ArduinoBLE.h>
+
+BLEService ledService("19B10000-E8F2-537E-4F6C-D104768A1214"); // Bluetooth® Low Energy LED Service
+
+// Bluetooth® Low Energy LED Switch Characteristic - custom 128-bit UUID, read and writable by central
+BLEByteCharacteristic brightnessCharacteristic("19B10001-E8F2-537E-4F6C-D104768A1214", BLERead | BLEWrite);
+
+BLEUnsignedShortCharacteristic vBatCharacteristic("19B10002-E8F2-537E-4F6C-D104768A1214", BLERead);
+
+#endif
 #define LED_CHANNEL 3
 
 // default number of output channels
@@ -30,20 +43,24 @@ const float NOISE_FLOOR = 10.0f;
 
 // Battery measurement pins (XIAO nRF52840 Sense)
 #define PIN_BAT_EN   P0_14   // P0.14, enables divider when LOW
-const int PIN_BAT_ADC  = P0_31;   // P0.31 / AIN7
+//const int PIN_VBAT  = P0_31;   // P0.31 / AIN7
 
 // Divider values: 1M (top) and 510k (bottom)
-const float VBAT_R1 = 1000000.0f;   // top resistor (to battery +)
-const float VBAT_R2 = 510000.0f;    // bottom resistor (to GND)
+const int VBAT_R1 = 1000;   // top resistor (to battery +)
+int VBAT_R2 = 485;    // bottom resistor (to GND) (510?)
 
 // ADC configuration (nRF52 core: AR_DEFAULT = 3.6V, 12-bit)
 const float ADC_REF_V       = 2.4f;
 const int   ADC_RES_BITS    = 12;
-const float VBAT_LOW_THRESH = 3.8f;      // V: go to sleep below this
+const float VBAT_LOW_THRESH = 3.9f;      // V: go to sleep below this
 
 unsigned long lastBatSampleMs = 0;
 bool lowBattery = false;
 
+int brightness = 150;
+
+void check_vbat();
+void check_ble();
 
 void setup() {
   Serial.begin(115200);
@@ -60,9 +77,6 @@ void setup() {
   // Optionally set the gain
   // PDM.setGain(30);
 
-  // Initialize PDM with:
-  // - one channel (mono mode)
-  // - a 16 kHz sample rate
   if (!PDM.begin(channels, frequency)) {
     Serial.println("Failed to start PDM!");
     while (1);
@@ -76,24 +90,53 @@ void setup() {
   pinMode(PIN_BAT_EN, INPUT);
 
   // Configure ADC once
-  //analogReference(AR_INTERNAL2V4);
-  //analogReadResolution(ADC_RES_BITS);
+  analogReference(AR_INTERNAL2V4);
+  analogReadResolution(ADC_RES_BITS);
 
+#ifdef USE_BLE
+  if (!BLE.begin()) {
+    Serial.println("starting Bluetooth® Low Energy module failed!");
+  }
+  else
+  {
+    // set advertised local name and service UUID:
+    BLE.setLocalName("LED Necklace");
+    BLE.setAdvertisedService(ledService);
+
+    // add the characteristic to the service
+    ledService.addCharacteristic(brightnessCharacteristic);
+    ledService.addCharacteristic(vBatCharacteristic);
+
+    // add service
+    BLE.addService(ledService);
+
+    // set the initial value for the characeristic:
+    brightnessCharacteristic.writeValue(brightness);
+
+    // start advertising
+    BLE.advertise();
+
+    Serial.println("BLE LED Peripheral");
+  }
+#endif
 }
 
-int v=150;
 void loop() 
 {
-  //check_vbat();
+  check_vbat();
+#ifdef USE_BLE
+  check_ble();
+#endif
 
   if (Serial.available() > 3) 
   {
-    v = Serial.parseInt();        // read number -1..255
-    if(v < 0 || v > -255)
-      analogWrite(LED_CHANNEL, -v);   // test LED brightness
+    VBAT_R2 = Serial.parseInt();
+    /*brightness = Serial.parseInt();        // read number -1..255
+    if(brightness < 0 || brightness > -255)
+      analogWrite(LED_CHANNEL, -brightness);   // test LED brightness
     else
       digitalWrite(LED_CHANNEL, HIGH);
-    Serial.println(v);
+    Serial.println(brightness);*/
   }
 
   // Wait for samples to be read
@@ -128,26 +171,21 @@ void loop()
     if (ledValueF > 255.0f) ledValueF = 255.0f;
 
     int ledValue = 0;
-    if(v >= 0)
+    if(brightness >= 0)
     {
       ledValue = ((int)ledValueF);
-      if(ledValue > v)
-        ledValue = v;
+      if(ledValue > brightness)
+        ledValue = brightness;
       analogWrite(LED_BUILTIN, 255-ledValue);
       analogWrite(LED_CHANNEL, ledValue);
     }
 
-    // If analogWrite doesn't compile for your core, uncomment this instead:
-    //digitalWrite(LED_BUILTIN, ledValue > 50 ? HIGH : LOW);
-
-    // ---- Debug / plotting ----
     // Plot the filtered loudness (or effectiveLoudness) in Serial Plotter
-    Serial.print(filteredLoudness);
+    /*Serial.print(filteredLoudness);
     Serial.print(", ");
-    Serial.println(ledValue);
+    Serial.println(ledValue);*/
 
-    // Clear the read count
-    samplesRead = 0;
+    samplesRead = 0;    // Clear the read count
   }
 }
 
@@ -170,63 +208,96 @@ void onPDMdata() {
 void check_vbat(void)
 {
   unsigned long now = millis();
-  //if (!lowBattery && (now - lastBatSampleMs >= 300000UL)) {   // every 120 s
-  if(0) {
+  if (!lowBattery && (now - lastBatSampleMs >= 1000UL)) {   // every 120 s
     lastBatSampleMs = now;
 
     // Enable divider: P0.14 as output LOW
-    /*pinMode(PIN_BAT_EN, OUTPUT);
+    pinMode(PIN_BAT_EN, OUTPUT);
     digitalWrite(PIN_BAT_EN, LOW);
     delay(5);  // let the divider settle a bit
 
     // Read divided battery voltage on P0.31 / AIN7
-    int raw = analogRead(PIN_BAT_ADC);
+    int raw = analogRead(PIN_VBAT);
 
     // Disable divider again: high-Z
-    pinMode(PIN_BAT_EN, INPUT);*/
-    int raw = 150;
+    pinMode(PIN_BAT_EN, INPUT);
 
     // Convert ADC reading to real battery voltage
     float adcMax = (1 << ADC_RES_BITS) - 1;
     float vDiv   = (raw * ADC_REF_V) / adcMax;               // voltage at divider node
-    float vBat   = vDiv * ((VBAT_R1 + VBAT_R2) / VBAT_R2);   // undo divider
+    float vBat   = vDiv * ((float)(VBAT_R1 + VBAT_R2) / (float)(VBAT_R2));   // undo divider
 
-    Serial.print("Battery: ");
-    Serial.print(vBat, 3);
-    Serial.println(" V");
+    uint16_t vBat_mV = (uint16_t)(vBat * 1000.0f);
+    vBatCharacteristic.writeValue(vBat_mV);
 
-    // Stop LED output (active-low LED → 255 = off)
-    analogWrite(LED_BUILTIN, 255);
-    analogWrite(LED_CHANNEL, 0);
+    //Serial.print("Battery: ");
+    /*Serial.print(vBat, 3);
+    Serial.print(",");
+    Serial.println(raw);*/
 
-    // Stop microphone / PDM to reduce current
-    PDM.end();
-
-    Serial.flush();
-
-    NRF_POWER->SYSTEMOFF = 1;
-    while (1) {
-      // should not return
-    }
-
-    /*if (vBat < VBAT_LOW_THRESH) {
+    if (vBat < VBAT_LOW_THRESH) {
       lowBattery = true;
-      Serial.println("Battery low, going to sleep...");
 
       // Stop LED output (active-low LED → 255 = off)
-      analogWrite(LED_BUILTIN, 255);
-      analogWrite(LED_CHANNEL, 0);
+      digitalWrite(LED_BUILTIN, HIGH);
+      digitalWrite(LED_CHANNEL, LOW);
 
       // Stop microphone / PDM to reduce current
       PDM.end();
 
+      BLE.stopAdvertise();
+      BLE.disconnect();
+      BLE.end();
+
       Serial.flush();
 
+      delay(30000);
       // Deep sleep / system off (nRF52)
       NRF_POWER->SYSTEMOFF = 1;
       while (1) {
         // should not return
       }
-    }*/
+    }
   }
 }
+
+#ifdef USE_BLE
+void check_ble()
+{
+  static int ble_state = 0;
+  static BLEDevice central;
+  switch(ble_state)
+  {
+    case 0:   // listen for Bluetooth® Low Energy peripherals to connect:
+      central = BLE.central();
+
+      if (central) {    // if a central is connected to peripheral:
+        Serial.print("Connected to central: ");      
+        Serial.println(central.address());    // print the central's MAC address
+        ble_state = 1;
+      }
+    break;
+
+    case 1:
+      // while the central is still connected to peripheral:
+      if(central.connected()) 
+      {
+        if (brightnessCharacteristic.written()) 
+        {
+          brightness = brightnessCharacteristic.value();
+
+          Serial.print(F("Brightness: "));
+          Serial.println(brightness);
+        }
+      }
+      else
+      {
+        // when the central disconnects, print it out:
+        Serial.print(F("Disconnected from central: "));
+        Serial.println(central.address());
+        ble_state = 0;
+      }
+    break;
+  }
+}
+#endif
