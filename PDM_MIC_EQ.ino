@@ -1,4 +1,6 @@
 #include <PDM.h>
+#include <Filters.h>
+#include <Filters/Butterworth.hpp>
 #include "battery.h"
 #include "ble_control.h"
 
@@ -10,17 +12,16 @@ uint16_t pwmMax = (1 << PWM_RES_BITS) - 1;
 
 #define LED_CHANNEL 3
 
-// default number of output channels
-static const char channels = 1;
+static const char channels = 1;   // default number of output channels
+static const int f_s = 16000;   // default PCM output frequency
 
-// default PCM output frequency
-static const int frequency = 16000;
+short sampleBuffer[512];    // Buffer to read samples into, each sample is 16-bits
+volatile int samplesRead = 0;   // Number of audio samples read
 
-// Buffer to read samples into, each sample is 16-bits
-short sampleBuffer[512];
-
-// Number of audio samples read
-volatile int samplesRead = 0;
+// --- Butterworth LPF for bass ---
+const double f_c = 150.0;      // try 80..200 Hz
+const double f_n = 2.0 * f_c / (double)f_s;
+auto bassLP = butter<6>(f_n);
 
 // ---- Beat / loudness detection variables ----
 
@@ -31,10 +32,10 @@ float filteredLoudness = 0.0f;
 const float LP_ALPHA = 0.15f;
 
 // Scale mic loudness into LED brightness (tune this)
-const float SENSITIVITY = 8.0f;  // increase if LED is too dark, decrease if always maxed
+const float SENSITIVITY = 3.0f;  // increase if LED is too dark, decrease if always maxed
 
 // Optional: simple noise floor to ignore very quiet sounds
-const float NOISE_FLOOR = 10.0f;
+const float NOISE_FLOOR = 50.0f;
 
 
 
@@ -42,6 +43,62 @@ unsigned long lastBatSampleMs = 0;
 bool lowBattery = false;
 
 int brightness = 600;
+
+
+static const uint16_t ENV_BLOCK_N = 320;   // 20 ms @ 16 kHz
+static float    ENV_ALPHA   = 0.1f;
+
+static uint32_t envSumAbs = 0;
+static uint16_t envCount  = 0;
+static float    envLp     = 0.0f;          // smoothed envelope (your LED driver input)
+
+// call this once per filtered sample:
+static inline void envelope_update(int16_t filtSample)
+{
+  uint16_t a = (filtSample < 0) ? (uint16_t)(-filtSample) : (uint16_t)filtSample;
+  envSumAbs += a;
+  envCount++;
+
+  if (envCount >= ENV_BLOCK_N) {
+    float env = (float)envSumAbs / (float)ENV_BLOCK_N;      // mean(|x|) for the block
+    envLp = envLp + ENV_ALPHA * (env - envLp);              // one-pole low-pass
+
+    // reset for next block
+    envSumAbs = 0;
+    envCount  = 0;
+    
+    // ---- Apply noise floor ----
+    float effectiveLoudness = envLp - NOISE_FLOOR;
+    if (effectiveLoudness < 0.0f) {
+      effectiveLoudness = 0.0f;
+    }
+
+    // ---- Map loudness to LED brightness ----
+    float ledValueF = effectiveLoudness * SENSITIVITY;
+
+    if (ledValueF > (float)pwmMax)
+      ledValueF = (float)pwmMax;
+
+    int ledValue = (int)ledValueF;
+    
+    if (ledValue > brightness)
+      ledValue = brightness;
+
+    switch(getLedMode())
+    {
+      case 0: ledValue = 0; break;
+      case 2: ledValue = brightness; break;
+    }
+
+    analogWrite(LED_CHANNEL, ledValue);
+    
+    // Plot the filtered loudness (or effectiveLoudness) in Serial Plotter
+    Serial.print(envLp);
+    Serial.print(", ");
+    Serial.println(ledValue);
+  }
+}
+
 
 void check_vbat();
 void check_ble();
@@ -60,9 +117,9 @@ void setup() {
   PDM.onReceive(onPDMdata);
 
   // Optionally set the gain
-  //PDM.setGain(25);
+  PDM.setGain(55);
 
-  if (!PDM.begin(channels, frequency)) {
+  if (!PDM.begin(channels, f_s)) {
     Serial.println("Failed to start PDM!");
     while (1);
   }
@@ -107,66 +164,13 @@ void loop()
     // Wait for samples to be read
     if (samplesRead) 
     {
-      for (int i = 0; i < samplesRead; i++) {
-        lowPassSignal = lowPassSignal + getFilterAlpha() * (sampleBuffer[i] - lowPassSignal);
-        int16_t s = lowPassSignal;
-        if (s < 0) s = -s;
-        sumAbs += s;
-      }
-
-      float avgLoudness = 0.0f;
-      if (samplesRead > 0) {
-        avgLoudness = (float)sumAbs / (float)samplesRead;
-      }
-      
-
-      /*// ---- Compute average absolute amplitude for this block ----
-      long sumAbs = 0;
-
-      for (int i = 0; i < samplesRead; i++) {
-        int16_t s = sampleBuffer[i];
-        if (s < 0) s = -s;
-        sumAbs += s;
-      }
-
-      float avgLoudness = 0.0f;
-      if (samplesRead > 0) {
-        avgLoudness = (float)sumAbs / (float)samplesRead;
-      }
-
-      // ---- Low-pass filter over time (simple 1st-order IIR) ----
-      // filtered = filtered + alpha * (input - filtered)
-      filteredLoudness = filteredLoudness + getFilterAlpha() * (avgLoudness - filteredLoudness);*/
-
-      // ---- Apply noise floor ----
-      float effectiveLoudness = filteredLoudness - NOISE_FLOOR;
-      if (effectiveLoudness < 0.0f) {
-        effectiveLoudness = 0.0f;
-      }
-
-      // ---- Map loudness to LED brightness ----
-      float ledValueF = effectiveLoudness * SENSITIVITY;
-
-      if (ledValueF > (float)pwmMax)
-        ledValueF = (float)pwmMax;
-
-      int ledValue = (int)ledValueF;
-      
-      if (ledValue > brightness)
-        ledValue = brightness;
-
-      switch(getLedMode())
+      for (int i = 0; i < samplesRead; i++) 
       {
-        case 0: ledValue = 0; break;
-        case 2: ledValue = brightness; break;
-      }
+        int16_t raw  = sampleBuffer[i];
+        int16_t filt = (int16_t)bassLP((float)raw);
 
-      analogWrite(LED_CHANNEL, ledValue);
-      
-      // Plot the filtered loudness (or effectiveLoudness) in Serial Plotter
-      Serial.print(filteredLoudness);
-      Serial.print(", ");
-      Serial.println(ledValue);
+        envelope_update(filt);    //also updates LED brightness
+      }
 
       samplesRead = 0;    // Clear the read count
     }
