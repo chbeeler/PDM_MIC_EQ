@@ -54,9 +54,10 @@ void batteryUpdate(float vbatThres)
   float vDiv   = (raw * ADC_REF_V) / adcMax;
   lastVBat     = vDiv * ((VBAT_R1 + VBAT_R2) / (float)VBAT_R2);
 
-  if (lastVBat < vbatThres && vbusConnected() == false) {
+  if (lastVBat < vbatThres && vbusConnected() == false)
     lowBattery = true;
-  }
+  else
+    lowBattery = false;
 }
 
 bool batteryIsLow()

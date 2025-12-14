@@ -7,3 +7,5 @@ void bleUpdate();
 uint16_t bleGetBrightness();   // current brightness from BLE
 void bleSetVBat_mV(uint16_t mv);  // push battery reading to characteristic
 float bleGetVbatThres();
+uint8_t getLedMode();
+float getFilterAlpha();

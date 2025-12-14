@@ -83,7 +83,7 @@ void setup() {
 void loop() 
 {
   batteryUpdate(bleGetVbatThres());
-  if (batteryIsLow()) {
+  if (batteryIsLow() == true && vbusConnected() == false) {
     // TODO: kill LEDs & BLE 
     // and bail out of loop early
     lowBattery = true;
@@ -105,8 +105,22 @@ void loop()
 #endif
 
     // Wait for samples to be read
-    if (samplesRead) {
-      // ---- Compute average absolute amplitude for this block ----
+    if (samplesRead) 
+    {
+      for (int i = 0; i < samplesRead; i++) {
+        lowPassSignal = lowPassSignal + getFilterAlpha() * (sampleBuffer[i] - lowPassSignal);
+        int16_t s = lowPassSignal;
+        if (s < 0) s = -s;
+        sumAbs += s;
+      }
+
+      float avgLoudness = 0.0f;
+      if (samplesRead > 0) {
+        avgLoudness = (float)sumAbs / (float)samplesRead;
+      }
+      
+
+      /*// ---- Compute average absolute amplitude for this block ----
       long sumAbs = 0;
 
       for (int i = 0; i < samplesRead; i++) {
@@ -122,7 +136,7 @@ void loop()
 
       // ---- Low-pass filter over time (simple 1st-order IIR) ----
       // filtered = filtered + alpha * (input - filtered)
-      filteredLoudness = filteredLoudness + LP_ALPHA * (avgLoudness - filteredLoudness);
+      filteredLoudness = filteredLoudness + getFilterAlpha() * (avgLoudness - filteredLoudness);*/
 
       // ---- Apply noise floor ----
       float effectiveLoudness = filteredLoudness - NOISE_FLOOR;
@@ -140,6 +154,12 @@ void loop()
       
       if (ledValue > brightness)
         ledValue = brightness;
+
+      switch(getLedMode())
+      {
+        case 0: ledValue = 0; break;
+        case 2: ledValue = brightness; break;
+      }
 
       analogWrite(LED_CHANNEL, ledValue);
       
