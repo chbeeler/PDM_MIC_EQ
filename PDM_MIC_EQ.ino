@@ -107,20 +107,7 @@ void loop()
     // Wait for samples to be read
     if (samplesRead) 
     {
-      for (int i = 0; i < samplesRead; i++) {
-        lowPassSignal = lowPassSignal + getFilterAlpha() * (sampleBuffer[i] - lowPassSignal);
-        int16_t s = lowPassSignal;
-        if (s < 0) s = -s;
-        sumAbs += s;
-      }
-
-      float avgLoudness = 0.0f;
-      if (samplesRead > 0) {
-        avgLoudness = (float)sumAbs / (float)samplesRead;
-      }
-      
-
-      /*// ---- Compute average absolute amplitude for this block ----
+      // ---- Compute average absolute amplitude for this block ----
       long sumAbs = 0;
 
       for (int i = 0; i < samplesRead; i++) {
@@ -136,7 +123,7 @@ void loop()
 
       // ---- Low-pass filter over time (simple 1st-order IIR) ----
       // filtered = filtered + alpha * (input - filtered)
-      filteredLoudness = filteredLoudness + getFilterAlpha() * (avgLoudness - filteredLoudness);*/
+      filteredLoudness = filteredLoudness + getFilterAlpha() * (avgLoudness - filteredLoudness);
 
       // ---- Apply noise floor ----
       float effectiveLoudness = filteredLoudness - NOISE_FLOOR;
