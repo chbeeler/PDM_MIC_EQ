@@ -1,0 +1,24 @@
+<input id="b" type="range" min="0" max="4095" value="400">
+<button id="connect">Connect</button>
+
+<script>
+let ch;
+
+document.getElementById('connect').onclick = async () => {
+  const dev = await navigator.bluetooth.requestDevice({
+    filters: [{ name: 'LED Necklace' }],
+    optionalServices: ['19b10050-e8f2-537e-4f6c-d104768a1214']
+  });
+  const server = await dev.gatt.connect();
+  const svc = await server.getPrimaryService('19b10050-e8f2-537e-4f6c-d104768a1214');
+  ch = await svc.getCharacteristic('19b10051-e8f2-537e-4f6c-d104768a1214'); // brightness
+};
+
+document.getElementById('b').oninput = async (e) => {
+  if (!ch) return;
+  const v = parseInt(e.target.value, 10);
+  const buf = new ArrayBuffer(2);
+  new DataView(buf).setUint16(0, v, true); // little-endian
+  await ch.writeValue(buf);
+};
+</script>
