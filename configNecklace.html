@@ -20,9 +20,10 @@
 <body>
   <div class="card">
     <div class="row">
-      <button id="connect">Connect</button>
-      <div id="status">Not connected</div>
-    </div>
+	  <button id="connect">Connect</button>
+	  <button id="disconnect" disabled>Disconnect</button>
+	  <div id="status">Not connected</div>
+	</div>
 
     <div class="row">
       <label for="bright">Brightness</label>
@@ -181,6 +182,21 @@
     $('filtVal').textContent = v;
     if (!chFilter) return;
     await chFilter.writeValue(u32le(v));
+  };
+  
+  $('disconnect').onclick = async () => {
+    try {
+      if (dev && dev.gatt.connected) {
+        dev.gatt.disconnect();
+      }
+    } catch (e) {
+      console.warn(e);
+    } finally {
+      enableUI(false);
+      $('disconnect').disabled = true;
+      setStatus('Disconnected');
+      dev = null;
+    }
   };
 </script>
 </body>
