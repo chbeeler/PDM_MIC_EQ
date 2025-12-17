@@ -1,24 +1,187 @@
-<input id="b" type="range" min="0" max="4095" value="400">
-<button id="connect">Connect</button>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>LED Necklace Config</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; }
+    .card { max-width: 520px; padding: 16px; border: 1px solid #ddd; border-radius: 12px; }
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 14px 0; }
+    label { font-weight: 600; }
+    input[type="range"] { width: 260px; }
+    .value { min-width: 72px; text-align: right; font-variant-numeric: tabular-nums; }
+    button { padding: 10px 14px; border-radius: 10px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    select { padding: 8px; border-radius: 10px; border: 1px solid #ccc; }
+    #status { margin-top: 10px; color: #444; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="row">
+      <button id="connect">Connect</button>
+      <div id="status">Not connected</div>
+    </div>
+
+    <div class="row">
+      <label for="bright">Brightness</label>
+      <input id="bright" type="range" min="0" max="255" value="100" disabled>
+      <div class="value"><span id="brightVal">100</span></div>
+    </div>
+
+    <div class="row">
+      <label for="mode">Mode</label>
+      <select id="mode" disabled>
+        <option value="0">Off</option>
+        <option value="1" selected>EQ</option>
+        <option value="2">Solid</option>
+        <option value="3">Pulse</option>
+      </select>
+      <div class="value"><span id="modeVal">1</span></div>
+    </div>
+
+    <div class="row">
+      <label for="vth">VBat threshold</label>
+      <input id="vth" type="range" min="3.0" max="4.3" step="0.1" value="3.8" disabled>
+      <div class="value"><span id="vthVal">3.8</span> V</div>
+    </div>
+
+    <div class="row">
+      <label for="filt">Filter</label>
+      <input id="filt" type="range" min="0" max="255" value="0" disabled>
+      <div class="value"><span id="filtVal">0</span></div>
+    </div>
+  </div>
 
 <script>
-let ch;
+  // ---- UUIDs (must match Arduino) ----
+  const SVC  = '19b10050-e8f2-537e-4f6c-d104768a1214';
+  const CH_BRIGHT = '19b10051-e8f2-537e-4f6c-d104768a1214'; // u32, device expects 0..255 (then *4 internally)
+  const CH_VBAT_TH = '19b10054-e8f2-537e-4f6c-d104768a1214'; // u32, value = V*10
+  const CH_MODE   = '19b10053-e8f2-537e-4f6c-d104768a1214';  // u8
+  const CH_FILTER = '19b10100-e8f2-537e-4f6c-d104768a1214';  // u32 (you use 0..255)
 
-document.getElementById('connect').onclick = async () => {
-  const dev = await navigator.bluetooth.requestDevice({
-    filters: [{ name: 'LED Necklace' }],
-    optionalServices: ['19b10050-e8f2-537e-4f6c-d104768a1214']
-  });
-  const server = await dev.gatt.connect();
-  const svc = await server.getPrimaryService('19b10050-e8f2-537e-4f6c-d104768a1214');
-  ch = await svc.getCharacteristic('19b10051-e8f2-537e-4f6c-d104768a1214'); // brightness
-};
+  let dev, server, svc;
+  let chBright, chVth, chMode, chFilter;
 
-document.getElementById('b').oninput = async (e) => {
-  if (!ch) return;
-  const v = parseInt(e.target.value, 10);
-  const buf = new ArrayBuffer(2);
-  new DataView(buf).setUint16(0, v, true); // little-endian
-  await ch.writeValue(buf);
-};
+  const $ = (id) => document.getElementById(id);
+  const setStatus = (s) => $('status').textContent = s;
+
+  function enableUI(en) {
+    $('bright').disabled = !en;
+    $('mode').disabled = !en;
+    $('vth').disabled = !en;
+    $('filt').disabled = !en;
+  }
+
+  function u32le(v) {
+    const buf = new ArrayBuffer(4);
+    new DataView(buf).setUint32(0, v >>> 0, true);
+    return buf;
+  }
+  function u8(v) {
+    const buf = new ArrayBuffer(1);
+    new DataView(buf).setUint8(0, v & 0xFF);
+    return buf;
+  }
+
+  async function tryReadInitials() {
+    // Reads are optional; if your characteristic isn’t readable or Bluefy blocks it, UI still works.
+    try {
+      const b = await chBright.readValue();
+      const raw = b.getUint32(0, true);           // your FW stores brightness/4
+      const bright255 = Math.max(0, Math.min(255, raw|0));
+      $('bright').value = bright255;
+      $('brightVal').textContent = bright255;
+    } catch {}
+
+    try {
+      const m = await chMode.readValue();
+      const mode = m.getUint8(0);
+      $('mode').value = String(mode);
+      $('modeVal').textContent = String(mode);
+    } catch {}
+
+    try {
+      const t = await chVth.readValue();
+      const raw = t.getUint32(0, true);           // your FW expects V*10
+      const v = (raw / 10.0);
+      $('vth').value = v.toFixed(1);
+      $('vthVal').textContent = v.toFixed(1);
+    } catch {}
+
+    try {
+      const f = await chFilter.readValue();
+      const raw = f.getUint32(0, true);
+      const v = Math.max(0, Math.min(255, raw|0));
+      $('filt').value = v;
+      $('filtVal').textContent = v;
+    } catch {}
+  }
+
+  $('connect').onclick = async () => {
+    try {
+      setStatus('Requesting device...');
+      dev = await navigator.bluetooth.requestDevice({
+        filters: [{ name: 'LED Necklace' }],
+        optionalServices: [SVC],
+      });
+
+      setStatus('Connecting...');
+      server = await dev.gatt.connect();
+      svc = await server.getPrimaryService(SVC);
+
+      chBright = await svc.getCharacteristic(CH_BRIGHT);
+      chVth    = await svc.getCharacteristic(CH_VBAT_TH);
+      chMode   = await svc.getCharacteristic(CH_MODE);
+      chFilter = await svc.getCharacteristic(CH_FILTER);
+
+      enableUI(true);
+      setStatus('Connected');
+
+      dev.addEventListener('gattserverdisconnected', () => {
+        enableUI(false);
+        setStatus('Disconnected');
+      });
+
+      await tryReadInitials();
+    } catch (e) {
+      console.error(e);
+      setStatus('Failed: ' + (e?.message || e));
+      enableUI(false);
+    }
+  };
+
+  $('bright').oninput = async (e) => {
+    const v = parseInt(e.target.value, 10);
+    $('brightVal').textContent = v;
+    if (!chBright) return;
+    // Your FW: brightness = value*4, and you initially write brightness/4.
+    // So from UI we write (brightness/4) in 0..255 units:
+    await chBright.writeValue(u32le(v));
+  };
+
+  $('mode').onchange = async (e) => {
+    const v = parseInt(e.target.value, 10);
+    $('modeVal').textContent = v;
+    if (!chMode) return;
+    await chMode.writeValue(u8(v));
+  };
+
+  $('vth').oninput = async (e) => {
+    const v = parseFloat(e.target.value);
+    $('vthVal').textContent = v.toFixed(1);
+    if (!chVth) return;
+    await chVth.writeValue(u32le(Math.round(v * 10.0)));
+  };
+
+  $('filt').oninput = async (e) => {
+    const v = parseInt(e.target.value, 10);
+    $('filtVal').textContent = v;
+    if (!chFilter) return;
+    await chFilter.writeValue(u32le(v));
+  };
 </script>
+</body>
+</html>
