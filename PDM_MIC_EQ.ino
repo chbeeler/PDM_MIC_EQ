@@ -81,30 +81,35 @@ void loop()
 {
   batteryUpdate(bleGetVbatThres());
   if (batteryIsLow() == true && vbusConnected() == false) {
-    // TODO: kill LEDs & BLE 
-    // and bail out of loop early
-    /*if(lowBattery == false)
-    {
-      // Immediately stop LEDs
-      analogWrite(LED_CHANNEL, 0); 
-      digitalWrite(LED_BUILTIN, HIGH);   // off (active-low)
-
-      // Stop microphone / PDM to reduce current
-      PDM.end();
-
-      BLE.stopAdvertise();
-      BLE.disconnect();
-      BLE.end();
-    }*/
-    lowBattery = true;
-
     // Immediately stop LEDs
     analogWrite(LED_CHANNEL, 0);
     digitalWrite(LED_BUILTIN, HIGH);   // off (active-low)
 
-    Serial.println("Vbat low");
+    if(getBatteryVoltage() < 3.7f)    //if battery is very low, completly turn off
+    {
+      if(lowBattery == false)
+      {
+        // Immediately stop LEDs
+        analogWrite(LED_CHANNEL, 0); 
+        digitalWrite(LED_BUILTIN, HIGH);   // off (active-low)
 
-    delay(1000);
+        // Stop microphone / PDM to reduce current
+        PDM.end();
+
+        BLE.stopAdvertise();
+        BLE.disconnect();
+        BLE.end();
+
+        NRF_POWER->SYSTEMOFF = 1;
+        while (1) {};
+      }
+      lowBattery = true;
+    }
+    else    //Otherwise we keep running without LEDs
+    {
+      Serial.println("Vbat low");
+      delay(1000);
+    }
   }
   else
   {
