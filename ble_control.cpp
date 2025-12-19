@@ -44,6 +44,23 @@ static float filter_alpha = 0.15f;
 
 static float vbatThres = 3.8f;
 
+static void writeSettingsString()
+{
+  char s[64];
+  int sensitivityRaw = (int)(sensitivityF / SENSITIVITY_CONV_FACTOR + 0.5f);
+  int alphaRaw       = (int)(filter_alpha * 500.0f + 0.5f);
+
+  // clamp to your intended ranges
+  if (brightness > 4095) brightness = 4095;
+  if (sensitivityRaw < 0) sensitivityRaw = 0;
+  if (sensitivityRaw > 255) sensitivityRaw = 255;
+  if (alphaRaw < 0) alphaRaw = 0;
+  if (alphaRaw > 255) alphaRaw = 255;
+
+  snprintf(s, sizeof(s), "%u,%d,%d", (unsigned)brightness, sensitivityRaw, alphaRaw);
+  settingsStrCharacteristic.writeValue(s);
+}
+
 void bleInit(uint16_t initialBrightness)
 {
   brightness = initialBrightness;
@@ -72,40 +89,84 @@ void bleInit(uint16_t initialBrightness)
   BLE.addService(ledService);
 
   brightnessCharacteristic.writeValue(brightness);
-  sensitivityCharacteristic.writeValue((uint16_t)(sensitivityF/SENSITIVITY_CONV_FACTOR));
+  sensitivityCharacteristic.writeValue((uint16_t)(sensitivityF / SENSITIVITY_CONV_FACTOR + 0.5f));
+  filterCharacteristic.writeValue((uint16_t)(filter_alpha * 500.0f + 0.5f));
+
+  // --- NEW: write initial settings string ---
+  writeSettingsString();
+
   BLE.advertise();
 }
+
 
 void bleUpdate()
 {
   if (!central) {
     central = BLE.central();
-    if (central) {
-      // connected
-    }
   } else {
     if (central.connected()) {
+
       if (brightnessCharacteristic.written()) {
-        brightness = brightnessCharacteristic.value();
+        uint32_t v = brightnessCharacteristic.value();
+        if (v > 4095) v = 4095;
+        brightness = (uint16_t)v;
+        writeSettingsString();
       }
+
       if (sensitivityCharacteristic.written()) {
-        sensitivityF = (float)sensitivityCharacteristic.value()*SENSITIVITY_CONV_FACTOR;
+        uint32_t raw = sensitivityCharacteristic.value();
+        if (raw > 255) raw = 255;
+        sensitivityF = (float)raw * SENSITIVITY_CONV_FACTOR;
+        writeSettingsString();
       }
+
+      if (filterCharacteristic.written()) {
+        uint32_t raw = filterCharacteristic.value();
+        if (raw > 255) raw = 255;
+        filter_alpha = (float)raw / 500.0f;   // 0..0.255
+        writeSettingsString();
+      }
+
       if (vBatThresCharacteristic.written()) {
         vbatThres = (float)vBatThresCharacteristic.value() / 10.0f;
       }
+
       if (debugCharacteristic.written()) {
         ledMode = debugCharacteristic.value();
       }
-      if (filterCharacteristic.written()) {
-        //filter_alpha = 0.15f - ((float)filterCharacteristic.value()) * (0.15f / 255.0f);
-        filter_alpha = ((float)filterCharacteristic.value())/100.0f;
+
+      // --- NEW: parse comma-separated settings string: "b,s,a" ---
+      if (settingsStrCharacteristic.written()) {
+        String str = settingsStrCharacteristic.value(); // Arduino String
+        int b = -1, s = -1, a = -1;
+
+        // allow spaces around commas
+        int matched = sscanf(str.c_str(), " %d , %d , %d ", &b, &s, &a);
+        if (matched == 3) {
+          if (b < 0) b = 0; if (b > 4095) b = 4095;
+          if (s < 0) s = 0; if (s > 255) s = 255;
+          if (a < 0) a = 0; if (a > 255) a = 255;
+
+          brightness   = (uint16_t)b;
+          sensitivityF = (float)s * SENSITIVITY_CONV_FACTOR;
+          filter_alpha = (float)a / 500.0f;
+
+          // keep individual characteristics in sync
+          brightnessCharacteristic.writeValue((uint32_t)brightness);
+          sensitivityCharacteristic.writeValue((uint32_t)s);
+          filterCharacteristic.writeValue((uint32_t)a);
+
+          // rewrite canonical string (normalized formatting)
+          writeSettingsString();
+        }
       }
+
     } else {
-      central = BLEDevice();   // reset handle
+      central = BLEDevice();
     }
   }
 }
+
 
 uint16_t bleGetBrightness()
 {
