@@ -20,6 +20,7 @@ const int   ADC_RES_BITS    = 12;
 static unsigned long lastBatSampleMs = 0;
 static bool  lowBattery = false;
 static float lastVBat   = 0.0f;
+static int raw = 0;
 static int raw_prev1 = 0;
 static int raw_prev2 = 0;
 
@@ -38,8 +39,9 @@ void batteryInit()
   pinMode(PIN_BAT_EN, INPUT);
   analogReference(AR_INTERNAL2V4);
   analogReadResolution(ADC_RES_BITS);
-  raw_prev1 = measureVBatPinRaw();
   raw_prev2 = measureVBatPinRaw();
+  raw_prev1 = measureVBatPinRaw();  
+  raw = measureVBatPinRaw();
 }
 
 bool vbusConnected()
@@ -50,7 +52,6 @@ bool vbusConnected()
 const float adcMax = (1 << ADC_RES_BITS) - 1;
 void batteryUpdate(float vbatThres)
 {
-  static int raw = 0;
   unsigned long now = millis();
   if (lowBattery == true && vbusConnected() == false) return;
 
