@@ -5,6 +5,7 @@ BLEService ledService("19B20050-E8F2-537E-4F6C-D104768A1214"); // Bluetooth® Lo
 
 // Bluetooth® Low Energy LED Switch Characteristic - custom 128-bit UUID, read and writable by central
 BLEUnsignedIntCharacteristic  brightnessCharacteristic("19B20041-E8F2-537E-4F6C-D104768A1214", BLERead | BLEWrite);
+BLEUnsignedIntCharacteristic  sensitivityCharacteristic("19B20042-E8F2-537E-4F6C-D104768A1214", BLERead | BLEWrite);
 
 BLEUnsignedShortCharacteristic vBatCharacteristic("19B20052-E8F2-537E-4F6C-D104768A1214", BLERead);
 
@@ -23,6 +24,7 @@ BLEStringCharacteristic cmdCharacteristic(
 
 // --- Add these descriptors (UUID 0x2901 = Characteristic User Description)
 BLEDescriptor descBrightness("2901", "Brightness (0..255)");
+BLEDescriptor descSensitivity("2901", "Sensitivity (0..255)");
 BLEDescriptor descVBat("2901", "Battery voltage (mV)");
 BLEDescriptor descMode("2901", "Mode (0=Off,1=EQ,2=Solid,3=Pulse)");
 BLEDescriptor descVBatThres("2901", "VBat threshold (V*10)");
@@ -32,8 +34,11 @@ BLEDescriptor descStrBrightness("2901", "Brightness String (0..1024)");
 
 //#endif
 
+#define SENSITIVITY_CONV_FACTOR   (0.08f)
+
 static BLEDevice central;
 static uint16_t brightness = 100;
+static float sensitivityF = 8.0f;
 static uint8_t ledMode = 1;
 static float filter_alpha = 0.15f;
 
@@ -49,6 +54,7 @@ void bleInit(uint16_t initialBrightness)
   BLE.setAdvertisedService(ledService);
 
   ledService.addCharacteristic(brightnessCharacteristic);
+  ledService.addCharacteristic(sensitivityCharacteristic);
   ledService.addCharacteristic(debugCharacteristic);
   ledService.addCharacteristic(vBatCharacteristic);
   ledService.addCharacteristic(vBatThresCharacteristic);
@@ -56,6 +62,7 @@ void bleInit(uint16_t initialBrightness)
   ledService.addCharacteristic(cmdCharacteristic);
 
   brightnessCharacteristic.addDescriptor(descBrightness);
+  sensitivityCharacteristic.addDescriptor(descSensitivity);
   vBatCharacteristic.addDescriptor(descVBat);
   debugCharacteristic.addDescriptor(descMode);
   vBatThresCharacteristic.addDescriptor(descVBatThres);
@@ -65,6 +72,7 @@ void bleInit(uint16_t initialBrightness)
   BLE.addService(ledService);
 
   brightnessCharacteristic.writeValue(brightness);
+  sensitivityCharacteristic.writeValue((uint16_t)(sensitivityF/SENSITIVITY_CONV_FACTOR));
   BLE.advertise();
 }
 
@@ -80,6 +88,9 @@ void bleUpdate()
       if (brightnessCharacteristic.written()) {
         brightness = brightnessCharacteristic.value();
       }
+      if (sensitivityCharacteristic.written()) {
+        sensitivityF = (float)sensitivityCharacteristic.value()*SENSITIVITY_CONV_FACTOR;
+      }
       if (vBatThresCharacteristic.written()) {
         vbatThres = (float)vBatThresCharacteristic.value() / 10.0f;
       }
@@ -87,7 +98,8 @@ void bleUpdate()
         ledMode = debugCharacteristic.value();
       }
       if (filterCharacteristic.written()) {
-        filter_alpha = 0.15f - ((float)filterCharacteristic.value()) * (0.15f / 255.0f);
+        //filter_alpha = 0.15f - ((float)filterCharacteristic.value()) * (0.15f / 255.0f);
+        filter_alpha = ((float)filterCharacteristic.value())/100.0f;
       }
     } else {
       central = BLEDevice();   // reset handle
@@ -98,6 +110,11 @@ void bleUpdate()
 uint16_t bleGetBrightness()
 {
   return brightness;
+}
+
+float bleGetSensitivity()
+{
+  return sensitivityF;
 }
 
 void bleSetVBat_mV(uint16_t mv)

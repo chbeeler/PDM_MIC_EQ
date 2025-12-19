@@ -30,18 +30,15 @@ float filteredLoudness = 0.0f;
 // How fast the filter reacts (0..1, closer to 0 = slower, more smoothing)
 const float LP_ALPHA = 0.15f;
 
-// Scale mic loudness into LED brightness (tune this)
-const float SENSITIVITY = 8.0f;  // increase if LED is too dark, decrease if always maxed
-
 // Optional: simple noise floor to ignore very quiet sounds
 const float NOISE_FLOOR = 10.0f;
-
 
 
 unsigned long lastBatSampleMs = 0;
 bool lowBattery = false;
 
 int brightness = 600;
+float sensitivityF = 8.0f;    //Scale mic loudness into LED brightness (tune this)
 
 void check_vbat();
 void check_ble();
@@ -115,6 +112,7 @@ void loop()
     bleSetVBat_mV((uint16_t)(getBatteryVoltage()*1000.0f));
     bleUpdate();
     brightness = bleGetBrightness();
+    sensitivityF = bleGetSensitivity();
 #endif
 
     // Wait for samples to be read
@@ -145,7 +143,7 @@ void loop()
       }
 
       // ---- Map loudness to LED brightness ----
-      float ledValueF = effectiveLoudness * SENSITIVITY;
+      float ledValueF = effectiveLoudness * sensitivityF;
 
       if (ledValueF > (float)pwmMax)
         ledValueF = (float)pwmMax;
