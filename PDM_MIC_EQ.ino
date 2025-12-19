@@ -100,9 +100,9 @@ void loop()
         BLE.disconnect();
         BLE.end();
 
-        delay(20000);
+        /*delay(20000);
         NRF_POWER->SYSTEMOFF = 1;
-        while (1) {};
+        while (1) {};*/
       }
       lowBattery = true;
     }
