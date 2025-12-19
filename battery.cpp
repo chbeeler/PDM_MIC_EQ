@@ -20,12 +20,26 @@ const int   ADC_RES_BITS    = 12;
 static unsigned long lastBatSampleMs = 0;
 static bool  lowBattery = false;
 static float lastVBat   = 0.0f;
+static int raw_prev1 = 0;
+static int raw_prev2 = 0;
+
+int measureVBatPinRaw()
+{
+  pinMode(PIN_BAT_EN, OUTPUT);
+  digitalWrite(PIN_BAT_EN, LOW);
+  delay(5);
+  int raw = analogRead(PIN_VBAT);
+  pinMode(PIN_BAT_EN, INPUT);
+  return raw;
+}
 
 void batteryInit()
 {
   pinMode(PIN_BAT_EN, INPUT);
   analogReference(AR_INTERNAL2V4);
   analogReadResolution(ADC_RES_BITS);
+  raw_prev1 = measureVBatPinRaw();
+  raw_prev2 = measureVBatPinRaw();
 }
 
 bool vbusConnected()
@@ -33,25 +47,21 @@ bool vbusConnected()
   return !digitalRead(PIN_nCHARGING);
 }
 
+const float adcMax = (1 << ADC_RES_BITS) - 1;
 void batteryUpdate(float vbatThres)
 {
+  static int raw = 0;
   unsigned long now = millis();
   if (lowBattery == true && vbusConnected() == false) return;
 
   if (now - lastBatSampleMs < 1000UL) return;   // 1 s
-  
+
+  raw_prev2 = raw_prev1;
+  raw_prev1 = raw;  
   lastBatSampleMs = now;
+  raw = measureVBatPinRaw();
 
-  pinMode(PIN_BAT_EN, OUTPUT);
-  digitalWrite(PIN_BAT_EN, LOW);
-  delay(5);
-
-  int raw = analogRead(PIN_VBAT);
-
-  pinMode(PIN_BAT_EN, INPUT);
-
-  float adcMax = (1 << ADC_RES_BITS) - 1;
-  float vDiv   = (raw * ADC_REF_V) / adcMax;
+  float vDiv   = (raw+raw_prev1+raw_prev2)/3 * ADC_REF_V / adcMax;
   lastVBat     = vDiv * ((VBAT_R1 + VBAT_R2) / (float)VBAT_R2);
 
   if (lastVBat < vbatThres && vbusConnected() == false)
