@@ -15,7 +15,7 @@ BLEUnsignedIntCharacteristic  vBatThresCharacteristic("19B20054-E8F2-537E-4F6C-D
 
 BLEUnsignedIntCharacteristic  filterCharacteristic("19B20100-E8F2-537E-4F6C-D104768A1214", BLERead | BLEWrite);
 
-BLEStringCharacteristic cmdCharacteristic(
+BLEStringCharacteristic settingsStrCharacteristic(
   "19B20110-E8F2-537E-4F6C-D104768A1214",
   BLERead | BLEWrite,
   64
@@ -29,7 +29,7 @@ BLEDescriptor descVBat("2901", "Battery voltage (mV)");
 BLEDescriptor descMode("2901", "Mode (0=Off,1=EQ,2=Solid,3=Pulse)");
 BLEDescriptor descVBatThres("2901", "VBat threshold (V*10)");
 BLEDescriptor descFilter("2901", "Filter amount (0..255)");
-BLEDescriptor descStrBrightness("2901", "Brightness String (0..1024)");
+BLEDescriptor descSettingsStr("2901", "Settings (b, s, a)");
 
 
 //#endif
@@ -59,7 +59,7 @@ void bleInit(uint16_t initialBrightness)
   ledService.addCharacteristic(vBatCharacteristic);
   ledService.addCharacteristic(vBatThresCharacteristic);
   ledService.addCharacteristic(filterCharacteristic);
-  ledService.addCharacteristic(cmdCharacteristic);
+  ledService.addCharacteristic(settingsStrCharacteristic);
 
   brightnessCharacteristic.addDescriptor(descBrightness);
   sensitivityCharacteristic.addDescriptor(descSensitivity);
@@ -67,7 +67,7 @@ void bleInit(uint16_t initialBrightness)
   debugCharacteristic.addDescriptor(descMode);
   vBatThresCharacteristic.addDescriptor(descVBatThres);
   filterCharacteristic.addDescriptor(descFilter);
-  cmdCharacteristic.addDescriptor(descStrBrightness);
+  settingsStrCharacteristic.addDescriptor(descSettingsStr);
 
   BLE.addService(ledService);
 
