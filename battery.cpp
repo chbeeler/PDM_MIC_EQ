@@ -20,6 +20,7 @@ const int   ADC_RES_BITS    = 12;
 static unsigned long lastBatSampleMs = 0;
 static bool  lowBattery = false;
 static float lastVBat   = 0.0f;
+static int lastVBatmV = 0;
 static int raw = 0;
 static int raw_prev1 = 0;
 static int raw_prev2 = 0;
@@ -64,6 +65,7 @@ void batteryUpdate(float vbatThres)
 
   float vDiv   = (raw+raw_prev1+raw_prev2)/3 * ADC_REF_V / adcMax;
   lastVBat     = vDiv * ((VBAT_R1 + VBAT_R2) / (float)VBAT_R2);
+  lastVBatmV   = (int)(lastVBat*1000.0f);
 
   if (lastVBat < vbatThres && vbusConnected() == false)
     lowBattery = true;
@@ -79,4 +81,9 @@ bool batteryIsLow()
 float getBatteryVoltage()
 {
   return lastVBat;
+}
+
+int getBatteryVoltage_mV()
+{
+  return lastVBatmV;
 }
