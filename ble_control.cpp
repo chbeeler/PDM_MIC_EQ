@@ -34,30 +34,43 @@ BLEDescriptor descSettingsStr("2901", "Settings (b, s, a)");
 
 //#endif
 
-#define SENSITIVITY_CONV_FACTOR   (0.08f)
+#define SENSITIVITY_CONV_FACTOR   (0.0005f)
 
 static BLEDevice central;
 static uint16_t brightness = 100;
-static float sensitivityF = 8.0f;
+static float sensitivityF = 0.5f;
 static uint8_t ledMode = 1;
 static float filter_alpha = 0.15f;
+static float noise_floor = 10.0f;   // same unit you use in DSP (avg abs, etc.)
+
+static const uint8_t MODE_EQ       = 1;
+static const uint8_t MODE_CONSTANT = 2;
 
 static float vbatThres = 3.8f;
 
 static void writeSettingsString()
 {
   char s[64];
+
+  // bm encodes mode in sign
+  int bm = (int)brightness;
+  if (ledMode == MODE_CONSTANT) bm = -bm;
+
   int sensitivityRaw = (int)(sensitivityF / SENSITIVITY_CONV_FACTOR + 0.5f);
   int alphaRaw       = (int)(filter_alpha * 500.0f + 0.5f);
+  int noiseFloorRaw          = (int)(noise_floor + 0.5f);
 
   // clamp to your intended ranges
-  if (brightness > 4095) brightness = 4095;
+  if (bm > 4095) bm = 4095; 
+  if (bm < -4095) bm = -4095;
   if (sensitivityRaw < 0) sensitivityRaw = 0;
-  if (sensitivityRaw > 255) sensitivityRaw = 255;
+  if (sensitivityRaw > 4095) sensitivityRaw = 4095;
   if (alphaRaw < 0) alphaRaw = 0;
   if (alphaRaw > 255) alphaRaw = 255;
+  if (noiseFloorRaw < 0) noiseFloorRaw = 0;
+  if (noiseFloorRaw > 255) noiseFloorRaw = 255; 
 
-  snprintf(s, sizeof(s), "%u,%d,%d", (unsigned)brightness, sensitivityRaw, alphaRaw);
+  snprintf(s, sizeof(s), "%d,%d,%d,%d", bm, sensitivityRaw, alphaRaw, noiseFloorRaw);
   settingsStrCharacteristic.writeValue(s);
 }
 
@@ -70,13 +83,14 @@ void bleInit(uint16_t initialBrightness)
   BLE.setLocalName("LED Necklace");
   BLE.setAdvertisedService(ledService);
 
+  ledService.addCharacteristic(settingsStrCharacteristic);
+  ledService.addCharacteristic(vBatCharacteristic);
   ledService.addCharacteristic(brightnessCharacteristic);
   ledService.addCharacteristic(sensitivityCharacteristic);
-  ledService.addCharacteristic(debugCharacteristic);
-  ledService.addCharacteristic(vBatCharacteristic);
+  ledService.addCharacteristic(debugCharacteristic);  
   ledService.addCharacteristic(vBatThresCharacteristic);
   ledService.addCharacteristic(filterCharacteristic);
-  ledService.addCharacteristic(settingsStrCharacteristic);
+  
 
   brightnessCharacteristic.addDescriptor(descBrightness);
   sensitivityCharacteristic.addDescriptor(descSensitivity);
@@ -137,24 +151,35 @@ void bleUpdate()
 
       // --- NEW: parse comma-separated settings string: "b,s,a" ---
       if (settingsStrCharacteristic.written()) {
-        String str = settingsStrCharacteristic.value(); // Arduino String
-        int b = -1, s = -1, a = -1;
+        int bm = 0, b = 0, s = 0, a = 0, nfRaw = 0;
 
-        // allow spaces around commas
-        int matched = sscanf(str.c_str(), " %d , %d , %d ", &b, &s, &a);
-        if (matched == 3) {
-          if (b < 0) b = 0; if (b > 4095) b = 4095;
-          if (s < 0) s = 0; if (s > 255) s = 255;
+        String str = settingsStrCharacteristic.value();
+        int matched = sscanf(str.c_str(), " %d , %d , %d , %d ", &bm, &s, &a, &nfRaw);
+
+        if (matched == 4) {
+          // mode from sign of bm
+          if (bm < 0) {
+            ledMode = MODE_CONSTANT;
+            b = -bm;
+          } else {
+            ledMode = MODE_EQ;
+            b = bm;
+          }
+          if (b < 0) b = 0; if (b > 4095) b = 4095;          
+          if (s < 0) s = 0; if (s > 4095) s = 4095;
           if (a < 0) a = 0; if (a > 255) a = 255;
-
+          if (nfRaw < 0) nfRaw = 0; if (nfRaw > 5000) nfRaw = 5000;
+          
           brightness   = (uint16_t)b;
           sensitivityF = (float)s * SENSITIVITY_CONV_FACTOR;
           filter_alpha = (float)a / 500.0f;
+          noise_floor = (float)nfRaw;
 
           // keep individual characteristics in sync
           brightnessCharacteristic.writeValue((uint32_t)brightness);
           sensitivityCharacteristic.writeValue((uint32_t)s);
           filterCharacteristic.writeValue((uint32_t)a);
+          debugCharacteristic.writeValue(ledMode);
 
           // rewrite canonical string (normalized formatting)
           writeSettingsString();
@@ -197,3 +222,5 @@ float getFilterAlpha()
 {
   return filter_alpha;
 }
+
+float bleGetNoiseFloor() { return noise_floor; }

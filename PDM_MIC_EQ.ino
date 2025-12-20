@@ -149,7 +149,7 @@ void loop()
       }
 
       // ---- Map loudness to LED brightness ----
-      float ledValueF = effectiveLoudness * sensitivityF;
+      float ledValueF = effectiveLoudness * sensitivityF * ((float)brightness)/100.0f;
 
       if (ledValueF > (float)pwmMax)
         ledValueF = (float)pwmMax;
@@ -168,9 +168,16 @@ void loop()
       analogWrite(LED_CHANNEL, ledValue);
       
       // Plot the filtered loudness (or effectiveLoudness) in Serial Plotter
+      Serial.print(effectiveLoudness);
+      Serial.print(", ");
       Serial.print(filteredLoudness);
       Serial.print(", ");
-      Serial.println(ledValue);
+      Serial.print(ledValue);      
+      Serial.print(", ");
+      Serial.print(sensitivityF);      
+      Serial.print(", ");
+      Serial.print(((float)brightness)/100.0f);
+      Serial.print("\n");
 
       samplesRead = 0;    // Clear the read count
     }

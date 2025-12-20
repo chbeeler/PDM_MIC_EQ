@@ -10,3 +10,4 @@ float bleGetVbatThres();
 uint8_t getLedMode();
 float getFilterAlpha();
 float bleGetSensitivity();
+float bleGetNoiseFloor();
