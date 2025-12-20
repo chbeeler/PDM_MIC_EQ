@@ -2,6 +2,7 @@
 #include "battery.h"
 #include "ble_control.h"
 
+//#define SERIAL_OUTPUT
 #define USE_BLE
 
 // ---- PWM configuration ----
@@ -89,6 +90,7 @@ void updateLEDs()
 
   analogWrite(LED_CHANNEL, ledValue);
   
+#ifdef SERIAL_OUTPUT
   // Plot the filtered loudness (or effectiveLoudness) in Serial Plotter
   Serial.print(effectiveLoudness);
   Serial.print(", ");
@@ -100,6 +102,7 @@ void updateLEDs()
   Serial.print(", ");
   Serial.print(((float)brightness)/100.0f);
   Serial.print("\n");
+#endif
 }
 
 void setup() {
