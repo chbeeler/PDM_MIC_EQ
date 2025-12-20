@@ -42,6 +42,7 @@ static float sensitivityF = 0.5f;
 static uint8_t ledMode = 1;
 static float filter_alpha = 0.15f;
 static float noise_floor = 10.0f;   // same unit you use in DSP (avg abs, etc.)
+uint16_t vbat_mV=0;
 
 static const uint8_t MODE_EQ       = 1;
 static const uint8_t MODE_CONSTANT = 2;
@@ -70,7 +71,7 @@ static void writeSettingsString()
   if (noiseFloorRaw < 0) noiseFloorRaw = 0;
   if (noiseFloorRaw > 255) noiseFloorRaw = 255; 
 
-  snprintf(s, sizeof(s), "%d,%d,%d,%d", bm, sensitivityRaw, alphaRaw, noiseFloorRaw);
+  snprintf(s, sizeof(s), "%d,%d,%d,%d,%d", bm, sensitivityRaw, alphaRaw, noiseFloorRaw, vbat_mV);
   settingsStrCharacteristic.writeValue(s);
 }
 
@@ -206,6 +207,8 @@ float bleGetSensitivity()
 void bleSetVBat_mV(uint16_t mv)
 {
   vBatCharacteristic.writeValue(mv);
+  vbat_mV = mv;
+  writeSettingsString();  //TODO: not efficient
 }
 
 float bleGetVbatThres()
