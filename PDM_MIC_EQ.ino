@@ -173,19 +173,20 @@ void loop()
   }
   else
   {
-#ifdef USE_BLE
-    bleSetVBat_mV(getBatteryVoltage_mV());
-    bleUpdate();
-    brightness = bleGetBrightness();
-    sensitivityF = bleGetSensitivity();
-#endif
-
     // Wait for samples to be read
     if (samplesRead) 
     {
       updateLEDs();
+
+#ifdef USE_BLE
+      bleSetVBat_mV(getBatteryVoltage_mV());
+      bleUpdate();
+      brightness = bleGetBrightness();
+      sensitivityF = bleGetSensitivity();
+#endif
     }
   }
+  delay(2);
 }
 
 /**
