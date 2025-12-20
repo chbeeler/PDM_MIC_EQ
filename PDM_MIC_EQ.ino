@@ -58,6 +58,7 @@ void updateLEDs()
   if (samplesRead > 0) {
     avgLoudness = (float)sumAbs / (float)samplesRead;
   }
+  samplesRead = 0;    // Clear the read count
 
   // ---- Low-pass filter over time (simple 1st-order IIR) ----
   // filtered = filtered + alpha * (input - filtered)
@@ -99,8 +100,6 @@ void updateLEDs()
   Serial.print(", ");
   Serial.print(((float)brightness)/100.0f);
   Serial.print("\n");
-
-  samplesRead = 0;    // Clear the read count
 }
 
 void setup() {
