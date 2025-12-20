@@ -43,6 +43,66 @@ float sensitivityF = 8.0f;    //Scale mic loudness into LED brightness (tune thi
 void check_vbat();
 void check_ble();
 
+void updateLEDs()
+{
+  // ---- Compute average absolute amplitude for this block ----
+  long sumAbs = 0;
+
+  for (int i = 0; i < samplesRead; i++) {
+    int16_t s = sampleBuffer[i];
+    if (s < 0) s = -s;
+    sumAbs += s;
+  }
+
+  float avgLoudness = 0.0f;
+  if (samplesRead > 0) {
+    avgLoudness = (float)sumAbs / (float)samplesRead;
+  }
+
+  // ---- Low-pass filter over time (simple 1st-order IIR) ----
+  // filtered = filtered + alpha * (input - filtered)
+  filteredLoudness = filteredLoudness + getFilterAlpha() * (avgLoudness - filteredLoudness);
+
+  // ---- Apply noise floor ----
+  float effectiveLoudness = filteredLoudness - NOISE_FLOOR;
+  if (effectiveLoudness < 0.0f) {
+    effectiveLoudness = 0.0f;
+  }
+
+  // ---- Map loudness to LED brightness ----
+  float ledValueF = effectiveLoudness * sensitivityF * ((float)brightness)/100.0f;
+
+  if (ledValueF > (float)pwmMax)
+    ledValueF = (float)pwmMax;
+
+  int ledValue = (int)ledValueF;
+  
+  if (ledValue > brightness)
+    ledValue = brightness;
+
+  switch(getLedMode())
+  {
+    case 0: ledValue = 0; break;
+    case 2: ledValue = brightness; break;
+  }
+
+  analogWrite(LED_CHANNEL, ledValue);
+  
+  // Plot the filtered loudness (or effectiveLoudness) in Serial Plotter
+  Serial.print(effectiveLoudness);
+  Serial.print(", ");
+  Serial.print(filteredLoudness);
+  Serial.print(", ");
+  Serial.print(ledValue);      
+  Serial.print(", ");
+  Serial.print(sensitivityF);      
+  Serial.print(", ");
+  Serial.print(((float)brightness)/100.0f);
+  Serial.print("\n");
+
+  samplesRead = 0;    // Clear the read count
+}
+
 void setup() {
   Serial.begin(115200);
   /*while (!Serial) {
@@ -124,62 +184,7 @@ void loop()
     // Wait for samples to be read
     if (samplesRead) 
     {
-      // ---- Compute average absolute amplitude for this block ----
-      long sumAbs = 0;
-
-      for (int i = 0; i < samplesRead; i++) {
-        int16_t s = sampleBuffer[i];
-        if (s < 0) s = -s;
-        sumAbs += s;
-      }
-
-      float avgLoudness = 0.0f;
-      if (samplesRead > 0) {
-        avgLoudness = (float)sumAbs / (float)samplesRead;
-      }
-
-      // ---- Low-pass filter over time (simple 1st-order IIR) ----
-      // filtered = filtered + alpha * (input - filtered)
-      filteredLoudness = filteredLoudness + getFilterAlpha() * (avgLoudness - filteredLoudness);
-
-      // ---- Apply noise floor ----
-      float effectiveLoudness = filteredLoudness - NOISE_FLOOR;
-      if (effectiveLoudness < 0.0f) {
-        effectiveLoudness = 0.0f;
-      }
-
-      // ---- Map loudness to LED brightness ----
-      float ledValueF = effectiveLoudness * sensitivityF * ((float)brightness)/100.0f;
-
-      if (ledValueF > (float)pwmMax)
-        ledValueF = (float)pwmMax;
-
-      int ledValue = (int)ledValueF;
-      
-      if (ledValue > brightness)
-        ledValue = brightness;
-
-      switch(getLedMode())
-      {
-        case 0: ledValue = 0; break;
-        case 2: ledValue = brightness; break;
-      }
-
-      analogWrite(LED_CHANNEL, ledValue);
-      
-      // Plot the filtered loudness (or effectiveLoudness) in Serial Plotter
-      Serial.print(effectiveLoudness);
-      Serial.print(", ");
-      Serial.print(filteredLoudness);
-      Serial.print(", ");
-      Serial.print(ledValue);      
-      Serial.print(", ");
-      Serial.print(sensitivityF);      
-      Serial.print(", ");
-      Serial.print(((float)brightness)/100.0f);
-      Serial.print("\n");
-
-      samplesRead = 0;    // Clear the read count
+      updateLEDs();
     }
   }
 }
