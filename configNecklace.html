@@ -125,7 +125,7 @@
     try {
       setStatus('Requesting device...');
       dev = await navigator.bluetooth.requestDevice({
-        filters: [{ name: 'LED Necklace' }],
+        filters: [{ namePrefix: 'LED Necklace' }],
         optionalServices: [SVC],
       });
 
